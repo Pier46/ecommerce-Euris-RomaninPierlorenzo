@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <title>Ordini</title>
+</head>
+<body>
+
+<h1>Ordini</h1>
+
+<button id="cancellaSelezionati" disabled>
+    Cancella selezionati
+</button>
+
+<br><br>
+
+<table border="1">
+    <thead>
+    <tr>
+        <th>Seleziona</th>
+        <th>Cliente</th>
+        <th>Prodotti</th>
+        <th>Stato</th>
+    </tr>
+    </thead>
+
+    <tbody id="ordiniTableBody"></tbody>
+</table>
+
+<br>
+
+<div>
+    <button id="precedente">Precedente</button>
+
+    <span id="paginaCorrente"></span>
+
+    <button id="successiva">Successiva</button>
+</div>
+
+<br>
+
+<a href="/">Torna alla home</a>
+
+<script>
+
+    let paginaCorrente = 0;
+    const dimensionePagina = 10;
+
+    // Mantiene gli ordini selezionati anche quando
+    // cambiamo pagina o ricarichiamo la tabella.
+    const ordiniSelezionati = new Set();
+
+
+    async function caricaOrdini() {
+
+        const response = await fetch(
+            `/api/ordini?page=${paginaCorrente}&size=${dimensionePagina}`
+        );
+
+        if (!response.ok) {
+            alert("Errore nel recupero degli ordini");
+            return;
+        }
+
+        const data = await response.json();
+
+        const ordini = data.content;
+
+        const tableBody = document.getElementById("ordiniTableBody");
+
+        tableBody.innerHTML = "";
+
+
+        ordini.forEach(ordine => {
+
+            const prodotti = ordine.prodotti
+                .map(p => `${p.prodotto} (x${p.quantita})`)
+                .join(", ");
+
+
+            // Riga principale
+            const row = document.createElement("tr");
+
+            row.innerHTML = `
+                <td>
+                    <input
+                        type="checkbox"
+                        class="ordine-checkbox"
+                        value="${ordine.id}"
+                        ${ordiniSelezionati.has(ordine.id) ? "checked" : ""}
+                        ${ordine.status === "CONSEGNATO" ? "disabled" : ""}
+                    >
+                </td>
+
+                <td>${ordine.cliente}</td>
+
+                <td>${prodotti}</td>
+
+                <td>${ordine.status}</td>
+            `;
+
+
+            // Riga del dettaglio
+            const detailRow = document.createElement("tr");
+
+            detailRow.style.display = "none";
+
+            detailRow.innerHTML = `
+                <td colspan="4">
+
+                    <strong>Dettaglio ordine</strong>
+
+                    <br><br>
+
+                    <strong>Cliente:</strong>
+                    ${ordine.cliente}
+
+                    <br><br>
+
+                    <strong>Prodotti:</strong>
+                    ${prodotti}
+
+                    <br><br>
+
+                    <strong>Stato:</strong>
+
+                    <select
+                        class="stato-select"
+                        ${ordine.status === "CONSEGNATO" ? "disabled" : ""}
+                    >
+
+                        <option value="ORDINATO"
+                            ${ordine.status === "ORDINATO" ? "selected" : ""}>
+                            ORDINATO
+                        </option>
+
+                        <option value="CONSEGNATO"
+                            ${ordine.status === "CONSEGNATO" ? "selected" : ""}>
+                            CONSEGNATO
+                        </option>
+
+                    </select>
+
+                    <button
+                        class="modifica-stato"
+                        ${ordine.status === "CONSEGNATO" ? "disabled" : ""}
+                    >
+                        Modifica
+                    </button>
+
+                </td>
+            `;
+
+
+            // Click sulla riga per aprire/chiudere il dettaglio.
+            row.addEventListener("click", (event) => {
+
+                // Il click sulla checkbox deve servire
+                // solamente a selezionare l'ordine.
+                if (event.target.classList.contains("ordine-checkbox")) {
+                    return;
+                }
+
+                if (detailRow.style.display === "none") {
+                    detailRow.style.display = "table-row";
+                } else {
+                    detailRow.style.display = "none";
+                }
+            });
+
+
+            // Gestione della selezione dell'ordine.
+            const checkbox = row.querySelector(".ordine-checkbox");
+
+            checkbox.addEventListener("change", () => {
+
+                if (checkbox.checked) {
+                    ordiniSelezionati.add(ordine.id);
+                } else {
+                    ordiniSelezionati.delete(ordine.id);
+                }
+
+                aggiornaPulsanteCancellazione();
+            });
+
+
+            // Gestione modifica stato.
+            const selectStato =
+                detailRow.querySelector(".stato-select");
+
+            const pulsanteModifica =
+                detailRow.querySelector(".modifica-stato");
+
+
+            pulsanteModifica.addEventListener("click", (event) => {
+
+                // Evita che il click richiuda il dettaglio.
+                event.stopPropagation();
+
+                aggiornaStato(
+                    ordine.id,
+                    selectStato.value
+                );
+            });
+
+
+            tableBody.appendChild(row);
+            tableBody.appendChild(detailRow);
+        });
+
+
+        aggiornaPaginazione(data);
+
+        aggiornaPulsanteCancellazione();
+    }
+
+
+    function aggiornaPaginazione(data) {
+
+        document.getElementById("paginaCorrente").textContent =
+            `Pagina ${data.page + 1} di ${data.totalPages}`;
+
+        document.getElementById("precedente").disabled =
+            data.page === 0;
+
+        document.getElementById("successiva").disabled =
+            data.page >= data.totalPages - 1;
+    }
+
+
+    function aggiornaPulsanteCancellazione() {
+
+        const pulsante =
+            document.getElementById("cancellaSelezionati");
+
+        pulsante.disabled =
+            ordiniSelezionati.size === 0;
+    }
+
+
+    async function aggiornaStato(ordineId, nuovoStato) {
+
+        const conferma = confirm(
+            `Vuoi modificare lo stato dell'ordine ${ordineId} in ${nuovoStato}?`
+        );
+
+        if (!conferma) {
+            return;
+        }
+
+
+        const response = await fetch(
+            `/api/ordini/${ordineId}/stato`,
+            {
+                method: "PUT",
+
+                headers: {
+                    "Content-Type": "application/json"
+                },
+
+                body: JSON.stringify({
+                    status: nuovoStato
+                })
+            }
+        );
+
+
+        if (!response.ok) {
+
+            const messaggio = await response.text();
+
+            alert(
+                `Errore nell'aggiornamento dell'ordine: ${messaggio}`
+            );
+
+            return;
+        }
+
+
+        alert("Stato dell'ordine aggiornato con successo");
+
+        await caricaOrdini();
+    }
+
+
+    document.getElementById("precedente")
+        .addEventListener("click", () => {
+
+            if (paginaCorrente > 0) {
+                paginaCorrente--;
+
+                caricaOrdini();
+            }
+        });
+
+
+    document.getElementById("successiva")
+        .addEventListener("click", () => {
+
+            paginaCorrente++;
+
+            caricaOrdini();
+        });
+
+
+    document.getElementById("cancellaSelezionati")
+        .addEventListener("click", async () => {
+
+            if (ordiniSelezionati.size === 0) {
+                return;
+            }
+
+
+            const selezionati =
+                Array.from(ordiniSelezionati);
+
+
+            const conferma = confirm(
+                `Vuoi cancellare ${selezionati.length} ordine/i?`
+            );
+
+
+            if (!conferma) {
+                return;
+            }
+
+
+            const response = await fetch(
+                "/api/ordini",
+                {
+                    method: "DELETE",
+
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+
+                    body: JSON.stringify({
+                        ordineIds: selezionati
+                    })
+                }
+            );
+
+
+            if (!response.ok) {
+
+                const messaggio = await response.text();
+
+                alert(
+                    `Errore nella cancellazione: ${messaggio}`
+                );
+
+                return;
+            }
+
+
+            alert("Ordini cancellati con successo");
+
+            // Gli ordini sono stati cancellati,
+            // quindi non devono più risultare selezionati.
+            ordiniSelezionati.clear();
+
+            await caricaOrdini();
+        });
+
+
+    caricaOrdini();
+
+</script>
+
+</body>
+</html>

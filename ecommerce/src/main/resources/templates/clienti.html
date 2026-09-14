@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <title>Clienti</title>
+</head>
+<body>
+
+<h1>Clienti</h1>
+
+<h2>Aggiungi cliente</h2>
+
+<form id="clienteForm">
+
+    <label for="nome">Nome:</label>
+    <input type="text" id="nome" required>
+
+    <br><br>
+
+    <label for="cognome">Cognome:</label>
+    <input type="text" id="cognome" required>
+
+    <br><br>
+
+    <label for="dataNascita">Data di nascita:</label>
+    <input type="date" id="dataNascita" required>
+
+    <br><br>
+
+    <label for="codFiscale">Codice fiscale:</label>
+    <input type="text" id="codFiscale" required>
+
+    <br><br>
+
+    <label for="email">Email:</label>
+    <input type="email" id="email" required>
+
+    <br><br>
+
+    <button type="submit">Registra cliente</button>
+
+</form>
+
+<hr>
+
+<h2>Elenco clienti</h2>
+
+<table border="1">
+
+    <thead>
+    <tr>
+        <th>ID</th>
+        <th>Nome</th>
+        <th>Cognome</th>
+        <th>Data di nascita</th>
+        <th>Codice fiscale</th>
+        <th>Email</th>
+        <th>Azioni</th>
+    </tr>
+    </thead>
+
+    <tbody id="clientiTableBody"></tbody>
+
+</table>
+
+<br>
+
+<div>
+    <button id="precedente">Precedente</button>
+    <span id="paginaCorrente"></span>
+    <button id="successiva">Successiva</button>
+</div>
+
+<script>
+
+    let paginaCorrente = 0;
+    const dimensionePagina = 10;
+
+
+    async function caricaClienti() {
+
+        const response = await fetch(
+            `/api/clienti?page=${paginaCorrente}&size=${dimensionePagina}`
+        );
+
+        if (!response.ok) {
+            alert("Errore nel recupero dei clienti");
+            return;
+        }
+
+        const data = await response.json();
+
+        const clienti = data.content;
+
+        const tableBody =
+            document.getElementById("clientiTableBody");
+
+        tableBody.innerHTML = "";
+
+        clienti.forEach(cliente => {
+
+            const row = document.createElement("tr");
+
+            row.innerHTML = `
+                <td>${cliente.id}</td>
+                <td>${cliente.nome}</td>
+                <td>${cliente.cognome}</td>
+                <td>${cliente.dataNascita}</td>
+                <td>${cliente.codFiscale}</td>
+                <td>${cliente.email}</td>
+                <td>
+                    <button onclick="creaOrdine(${cliente.id})">
+                        Crea ordine
+                    </button>
+                </td>
+            `;
+
+            tableBody.appendChild(row);
+        });
+
+        aggiornaPaginazione(data);
+    }
+
+
+    function creaOrdine(clienteId) {
+
+        window.location.href =
+            `/prodotti?clienteId=${clienteId}`;
+    }
+
+
+    function aggiornaPaginazione(data) {
+
+        document.getElementById("paginaCorrente").textContent =
+            `Pagina ${data.page + 1} di ${data.totalPages}`;
+
+        document.getElementById("precedente").disabled =
+            data.page === 0;
+
+        document.getElementById("successiva").disabled =
+            data.page >= data.totalPages - 1;
+    }
+
+
+    document.getElementById("precedente")
+        .addEventListener("click", () => {
+
+            if (paginaCorrente > 0) {
+
+                paginaCorrente--;
+
+                caricaClienti();
+            }
+        });
+
+
+    document.getElementById("successiva")
+        .addEventListener("click", () => {
+
+            paginaCorrente++;
+
+            caricaClienti();
+        });
+
+
+    document.getElementById("clienteForm")
+        .addEventListener("submit", async function(event) {
+
+            event.preventDefault();
+
+            const cliente = {
+
+                nome: document.getElementById("nome").value,
+
+                cognome:
+                    document.getElementById("cognome").value,
+
+                dataNascita:
+                    document.getElementById("dataNascita").value,
+
+                codFiscale:
+                    document.getElementById("codFiscale").value,
+
+                email:
+                    document.getElementById("email").value
+            };
+
+
+            const response = await fetch("/api/clienti", {
+
+                method: "POST",
+
+                headers: {
+                    "Content-Type": "application/json"
+                },
+
+                body: JSON.stringify(cliente)
+            });
+
+
+            if (!response.ok) {
+
+                alert("Errore nella registrazione del cliente");
+
+                return;
+            }
+
+
+            document.getElementById("clienteForm").reset();
+
+            paginaCorrente = 0;
+
+            await caricaClienti();
+        });
+
+
+    caricaClienti();
+
+</script>
+
+<a href="/">Torna alla home</a>
+
+</body>
+</html>

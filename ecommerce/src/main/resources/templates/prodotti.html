@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <title>Prodotti</title>
+</head>
+<body>
+
+<h1>Prodotti</h1>
+
+<!-- ========================= -->
+<!-- AGGIUNTA PRODOTTO -->
+<!-- ========================= -->
+
+<h2>Aggiungi prodotto</h2>
+
+<form id="prodottoForm">
+
+    <label for="codice">Codice:</label>
+    <input type="text" id="codice" required>
+
+    <br><br>
+
+    <label for="nome">Nome:</label>
+    <input type="text" id="nome" required>
+
+    <br><br>
+
+    <label for="stock">Stock:</label>
+    <input type="number" id="stock" min="0" required>
+
+    <br><br>
+
+    <button type="submit">Registra prodotto</button>
+
+</form>
+
+<hr>
+
+<!-- ========================= -->
+<!-- NUOVO ORDINE -->
+<!-- ========================= -->
+
+<h2>Nuovo ordine</h2>
+
+<div id="clienteSelezione">
+
+    <label for="clienteSelect">Cliente:</label>
+
+    <select id="clienteSelect">
+        <option value="">Seleziona un cliente</option>
+    </select>
+
+</div>
+
+<p id="clienteSelezionato"></p>
+
+<table border="1">
+
+    <thead>
+    <tr>
+        <th>Seleziona</th>
+        <th>ID</th>
+        <th>Codice</th>
+        <th>Nome</th>
+        <th>Stock</th>
+        <th>Quantità</th>
+    </tr>
+    </thead>
+
+    <tbody id="prodottiTableBody"></tbody>
+
+</table>
+
+<br>
+
+<div>
+    <button id="precedente">Precedente</button>
+    <span id="paginaCorrente"></span>
+    <button id="successiva">Successiva</button>
+</div>
+
+<br>
+
+<button id="creaOrdine">Crea ordine</button>
+
+<hr>
+
+<!-- ========================= -->
+<!-- JAVASCRIPT -->
+<!-- ========================= -->
+
+<script>
+
+    let paginaCorrente = 0;
+    const dimensionePagina = 10;
+
+    /*
+     * Leggiamo il cliente dalla URL.
+     *
+     * Esempio:
+     * /prodotti?clienteId=3
+     */
+    const params = new URLSearchParams(window.location.search);
+
+    const clienteIdUrl = params.get("clienteId");
+
+
+    /*
+     * Mantiene le selezioni dei prodotti
+     * anche quando cambiamo pagina.
+     *
+     * prodottoId -> quantità
+     */
+    const prodottiSelezionati = new Map();
+
+
+    // =========================
+    // CLIENTI
+    // =========================
+
+    async function caricaClienti() {
+
+        const response = await fetch(
+            "/api/clienti?page=0&size=100"
+        );
+
+        if (!response.ok) {
+
+            alert("Errore nel recupero dei clienti");
+
+            return;
+        }
+
+        const data = await response.json();
+
+        const clienti = data.content;
+
+        const select =
+            document.getElementById("clienteSelect");
+
+
+        clienti.forEach(cliente => {
+
+            const option =
+                document.createElement("option");
+
+            option.value = cliente.id;
+
+            option.textContent =
+                `${cliente.nome} ${cliente.cognome}`;
+
+            select.appendChild(option);
+        });
+
+
+        /*
+         * Se siamo arrivati dalla pagina clienti,
+         * preselezioniamo automaticamente il cliente.
+         */
+        if (clienteIdUrl) {
+
+            select.value = clienteIdUrl;
+
+            mostraClienteSelezionato();
+        }
+    }
+
+
+    function mostraClienteSelezionato() {
+
+        const select =
+            document.getElementById("clienteSelect");
+
+        const option =
+            select.options[select.selectedIndex];
+
+
+        if (select.value) {
+
+            document.getElementById(
+                "clienteSelezionato"
+            ).textContent =
+                `Cliente selezionato: ${option.textContent}`;
+
+        } else {
+
+            document.getElementById(
+                "clienteSelezionato"
+            ).textContent = "";
+        }
+    }
+
+
+    document.getElementById("clienteSelect")
+        .addEventListener("change", () => {
+
+            mostraClienteSelezionato();
+        });
+
+
+    // =========================
+    // PRODOTTI
+    // =========================
+
+    async function caricaProdotti() {
+
+        const response = await fetch(
+            `/api/prodotti?page=${paginaCorrente}&size=${dimensionePagina}`
+        );
+
+        if (!response.ok) {
+
+            alert("Errore nel recupero dei prodotti");
+
+            return;
+        }
+
+        const data = await response.json();
+
+        const prodotti = data.content;
+
+        const tableBody =
+            document.getElementById("prodottiTableBody");
+
+        tableBody.innerHTML = "";
+
+
+        prodotti.forEach(prodotto => {
+
+            const row =
+                document.createElement("tr");
+
+
+            const selezionato =
+                prodottiSelezionati.has(prodotto.id);
+
+
+            const quantita =
+                prodottiSelezionati.get(prodotto.id) || "";
+
+
+            row.innerHTML = `
+
+                <td>
+                    <input
+                        type="checkbox"
+                        class="prodotto-checkbox"
+                        data-id="${prodotto.id}"
+                        ${selezionato ? "checked" : ""}
+                    >
+                </td>
+
+                <td>${prodotto.id}</td>
+
+                <td>${prodotto.codice}</td>
+
+                <td>${prodotto.nome}</td>
+
+                <td>${prodotto.stock}</td>
+
+                <td>
+                    <input
+                        type="number"
+                        class="quantita"
+                        data-id="${prodotto.id}"
+                        min="1"
+                        max="${prodotto.stock}"
+                        value="${quantita}"
+                        ${selezionato ? "" : "disabled"}
+                    >
+                </td>
+            `;
+
+
+            tableBody.appendChild(row);
+        });
+
+
+        collegaEventiProdotti();
+
+        aggiornaPaginazione(data);
+    }
+
+
+    function collegaEventiProdotti() {
+
+        const checkbox =
+            document.querySelectorAll(
+                ".prodotto-checkbox"
+            );
+
+
+        checkbox.forEach(element => {
+
+            element.addEventListener(
+                "change",
+                function () {
+
+                    const prodottoId =
+                        Number(this.dataset.id);
+
+
+                    const quantitaInput =
+                        document.querySelector(
+                            `.quantita[data-id="${prodottoId}"]`
+                        );
+
+
+                    if (this.checked) {
+
+                        quantitaInput.disabled = false;
+
+                        const quantita =
+                            Number(quantitaInput.value);
+
+
+                        if (quantita > 0) {
+
+                            prodottiSelezionati.set(
+                                prodottoId,
+                                quantita
+                            );
+                        }
+
+                    } else {
+
+                        quantitaInput.disabled = true;
+
+                        prodottiSelezionati.delete(
+                            prodottoId
+                        );
+                    }
+                }
+            );
+        });
+
+
+        const quantitaInputs =
+            document.querySelectorAll(".quantita");
+
+
+        quantitaInputs.forEach(input => {
+
+            input.addEventListener(
+                "change",
+                function () {
+
+                    const prodottoId =
+                        Number(this.dataset.id);
+
+
+                    const quantita =
+                        Number(this.value);
+
+
+                    if (quantita > 0) {
+
+                        prodottiSelezionati.set(
+                            prodottoId,
+                            quantita
+                        );
+                    }
+                }
+            );
+        });
+    }
+
+
+    function aggiornaPaginazione(data) {
+
+        document.getElementById(
+            "paginaCorrente"
+        ).textContent =
+            `Pagina ${data.page + 1} di ${data.totalPages}`;
+
+
+        document.getElementById(
+            "precedente"
+        ).disabled =
+            data.page === 0;
+
+
+        document.getElementById(
+            "successiva"
+        ).disabled =
+            data.page >= data.totalPages - 1;
+    }
+
+
+    document.getElementById("precedente")
+        .addEventListener("click", () => {
+
+            if (paginaCorrente > 0) {
+
+                paginaCorrente--;
+
+                caricaProdotti();
+            }
+        });
+
+
+    document.getElementById("successiva")
+        .addEventListener("click", () => {
+
+            paginaCorrente++;
+
+            caricaProdotti();
+        });
+
+
+    // =========================
+    // AGGIUNTA PRODOTTO
+    // =========================
+
+    document.getElementById("prodottoForm")
+        .addEventListener(
+            "submit",
+            async function (event) {
+
+                event.preventDefault();
+
+
+                const prodotto = {
+
+                    codice:
+                        document.getElementById(
+                            "codice"
+                        ).value,
+
+                    nome:
+                        document.getElementById(
+                            "nome"
+                        ).value,
+
+                    stock:
+                        parseInt(
+                            document.getElementById(
+                                "stock"
+                            ).value
+                        )
+                };
+
+
+                const response = await fetch(
+                    "/api/prodotti",
+                    {
+                        method: "POST",
+
+                        headers: {
+                            "Content-Type":
+                                "application/json"
+                        },
+
+                        body: JSON.stringify(
+                            prodotto
+                        )
+                    }
+                );
+
+
+                if (!response.ok) {
+
+                    alert(
+                        "Errore nella registrazione del prodotto"
+                    );
+
+                    return;
+                }
+
+
+                document.getElementById(
+                    "prodottoForm"
+                ).reset();
+
+
+                paginaCorrente = 0;
+
+                await caricaProdotti();
+            }
+        );
+
+
+    // =========================
+    // CREAZIONE ORDINE
+    // =========================
+
+    document.getElementById("creaOrdine")
+        .addEventListener(
+            "click",
+            async () => {
+
+                const clienteId =
+                    document.getElementById(
+                        "clienteSelect"
+                    ).value;
+
+
+                if (!clienteId) {
+
+                    alert(
+                        "Selezionare un cliente"
+                    );
+
+                    return;
+                }
+
+
+                if (
+                    prodottiSelezionati.size === 0
+                ) {
+
+                    alert(
+                        "Selezionare almeno un prodotto"
+                    );
+
+                    return;
+                }
+
+
+                const prodotti =
+                    Array.from(
+                        prodottiSelezionati.entries()
+                    ).map(
+                        ([prodottoId, quantita]) => ({
+
+                            prodottoId:
+                                prodottoId,
+
+                            quantita:
+                                quantita
+                        })
+                    );
+
+
+                const ordine = {
+
+                    clienteId:
+                        Number(clienteId),
+
+                    prodotti:
+                        prodotti
+                };
+
+
+                const response = await fetch(
+                    "/api/ordini",
+                    {
+                        method: "POST",
+
+                        headers: {
+                            "Content-Type":
+                                "application/json"
+                        },
+
+                        body: JSON.stringify(
+                            ordine
+                        )
+                    }
+                );
+
+
+                if (!response.ok) {
+
+                    const messaggio =
+                        await response.text();
+
+                    alert(
+                        `Errore nella creazione dell'ordine: ${messaggio}`
+                    );
+
+                    return;
+                }
+
+
+                alert(
+                    "Ordine creato con successo"
+                );
+
+
+                window.location.href =
+                    "/ordini";
+            }
+        );
+
+
+    // =========================
+    // AVVIO PAGINA
+    // =========================
+
+    caricaClienti();
+
+    caricaProdotti();
+
+</script>
+
+<a href="/">Torna alla home</a>
+
+</body>
+</html>
